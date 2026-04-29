@@ -7,36 +7,203 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
-import android.app.Activity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.app.ActivityCompat
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 
-class MainActivity : Activity(), LocationListener {
+class MainActivity : ComponentActivity(), LocationListener {
 
-    private lateinit var map: MapView
     private lateinit var locationManager: LocationManager
+    private var currentLocation: Location? = null
+    private var mapView: MapView? = null
     private var userMarker: Marker? = null
 
-    private val permissionCode = 100
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (isGranted) {
+                startLocationUpdates()
+            }
+        }
+
+    data class PointOfInterest(
+        val name: String,
+        val type: String,
+        val description: String,
+        val latitude: Double,
+        val longitude: Double
+    )
+
+    private val poiList = mutableStateListOf<PointOfInterest>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
         Configuration.getInstance().userAgentValue = packageName
-        setContentView(R.layout.activity_main)
-
-        map = findViewById(R.id.map)
-        map.setTileSource(TileSourceFactory.MAPNIK)
-        map.setMultiTouchControls(true)
-        map.controller.setZoom(18.0)
-
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-
         checkLocationPermission()
-    }
+
+        setContent {
+            val navController = rememberNavController()
+
+            NavHost(
+                navController = navController,
+                startDestination = "map"
+            ) {
+                composable("map") {
+                    MapScreen(
+                        onAddPoiClick = {
+                            navController.navigate("addPoi")
+                        }
+                    )
+                }
+
+                composable("addPoi") {
+                    AddPoiScreen(
+                        onSavePoi = { name, type, description ->
+                            val location = currentLocation
+
+                            if (location != null) {
+                                poiList.add(
+                                    PointOfInterest(
+                                        name = name,
+                                        type = type,
+                                        description = description,
+                                        latitude = location.latitude,
+                                        longitude = location.longitude
+                                    ))
+                            }
+                            navController.popBackStack()
+                        },
+                        onBackClick = {
+                            navController.popBackStack()
+                        }
+                    )
+                }}}}
+
+    @Composable
+    fun MapScreen(onAddPoiClick: () -> Unit) {
+        Box(modifier = Modifier.fillMaxSize()) {
+
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { context ->
+                    val map = MapView(context)
+
+                    map.setTileSource(TileSourceFactory.MAPNIK)
+                    map.setMultiTouchControls(true)
+                    map.controller.setZoom(18.0)
+                    mapView = map
+
+                    currentLocation?.let {
+                        updateMapLocation(it)
+                    }
+                    map
+                },
+                update = { map ->
+                    map.overlays.clear()
+
+                    currentLocation?.let { location ->
+                        val userPoint = GeoPoint(location.latitude, location.longitude)
+
+                        userMarker = Marker(map)
+                        userMarker!!.position = userPoint
+                        userMarker!!.title = "You are here"
+
+                        map.overlays.add(userMarker)
+                        map.controller.setCenter(userPoint)
+                    }
+
+                    for (poi in poiList) {
+                        val marker = Marker(map)
+                        marker.position = GeoPoint(poi.latitude, poi.longitude)
+                        marker.title = poi.name
+                        marker.snippet = "${poi.type}\n${poi.description}"
+                        map.overlays.add(marker)
+                    }
+                    map.invalidate()
+                }
+            )
+
+            Button(
+                onClick = onAddPoiClick,
+                modifier = Modifier
+                    .padding(16.dp)
+            ) {
+                Text("Add POI.")
+            }}}
+
+    @Composable
+    fun AddPoiScreen(
+        onSavePoi: (String, String, String) -> Unit,
+        onBackClick: () -> Unit
+    ) {
+        var name by remember { mutableStateOf("") }
+        var type by remember { mutableStateOf("") }
+        var description by remember { mutableStateOf("") }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Add Point of Interest.")
+
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = type,
+                onValueChange = { type = it },
+                label = { Text("Type") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("Description") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Button(
+                onClick = {
+                    onSavePoi(name, type, description)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Save POI.")
+            }
+
+            Button(
+                onClick = onBackClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Back to Map.")
+            }
+        }}
+
 
     private fun checkLocationPermission() {
         val permissionGranted = ActivityCompat.checkSelfPermission(
@@ -47,11 +214,7 @@ class MainActivity : Activity(), LocationListener {
         if (permissionGranted) {
             startLocationUpdates()
         } else {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                permissionCode
-            )
+            requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
 
@@ -83,42 +246,31 @@ class MainActivity : Activity(), LocationListener {
     }
 
     private fun updateMapLocation(location: Location) {
-        val userPoint = GeoPoint(location.latitude, location.longitude)
+        currentLocation = location
 
-        map.controller.animateTo(userPoint)
+        val map = mapView
 
-        if (userMarker == null) {
-            userMarker = Marker(map)
-            userMarker!!.title = "You are here"
-            map.overlays.add(userMarker)
-        }
-        userMarker!!.position = userPoint
-        map.invalidate()
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode == permissionCode &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            startLocationUpdates()
+        if (map != null) {
+            val userPoint = GeoPoint(location.latitude, location.longitude)
+            map.controller.setCenter(userPoint)
+            map.invalidate()
         }
     }
 
     override fun onResume() {
         super.onResume()
-        map.onResume()
+        mapView?.onResume()
+
+        if (::locationManager.isInitialized) {
+            checkLocationPermission()
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        map.onPause()
-        locationManager.removeUpdates(this)
-    }
-}
+        mapView?.onPause()
+
+        if (::locationManager.isInitialized) {
+            locationManager.removeUpdates(this)
+        }
+    }}
