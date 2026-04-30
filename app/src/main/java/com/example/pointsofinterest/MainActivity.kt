@@ -31,6 +31,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 class MainActivity : ComponentActivity(), LocationListener {
 
     private lateinit var locationManager: LocationManager
+
+    private lateinit var databaseHelper: PoiDatabaseHelper
     private var currentLocation: Location? = null
     private var mapView: MapView? = null
     private var userMarker: Marker? = null
@@ -57,6 +59,7 @@ class MainActivity : ComponentActivity(), LocationListener {
 
         Configuration.getInstance().userAgentValue = packageName
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        databaseHelper = PoiDatabaseHelper(this)
         checkLocationPermission()
 
         setContent {
@@ -80,14 +83,22 @@ class MainActivity : ComponentActivity(), LocationListener {
                             val location = currentLocation
 
                             if (location != null) {
-                                poiList.add(
-                                    PointOfInterest(
-                                        name = name,
-                                        type = type,
-                                        description = description,
-                                        latitude = location.latitude,
-                                        longitude = location.longitude
-                                    ))
+                                val newPoi = PointOfInterest(
+                                    name = name,
+                                    type = type,
+                                    description = description,
+                                    latitude = location.latitude,
+                                    longitude = location.longitude
+                                )
+                                poiList.add(newPoi)
+
+                                databaseHelper.addPoi(
+                                    name,
+                                    type,
+                                    description,
+                                    location.latitude,
+                                    location.longitude
+                                )
                             }
                             navController.popBackStack()
                         },
