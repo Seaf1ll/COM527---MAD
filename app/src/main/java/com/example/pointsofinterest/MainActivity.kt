@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity(), LocationListener {
         Configuration.getInstance().userAgentValue = packageName
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         databaseHelper = PoiDatabaseHelper(this)
+        poiList.addAll(databaseHelper.getAllPois())
         checkLocationPermission()
 
         setContent {
