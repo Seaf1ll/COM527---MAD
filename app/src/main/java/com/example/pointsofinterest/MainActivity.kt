@@ -28,6 +28,14 @@ import org.osmdroid.views.overlay.Marker
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import java.net.URL
 
 class MainActivity : ComponentActivity(), LocationListener {
 
@@ -44,6 +52,7 @@ class MainActivity : ComponentActivity(), LocationListener {
                 startLocationUpdates()
             }
         }
+    private val prefsName = "poi_preferences"
 
     data class PointOfInterest(
         val name: String,
@@ -54,6 +63,8 @@ class MainActivity : ComponentActivity(), LocationListener {
     )
 
     private val poiList = mutableStateListOf<PointOfInterest>()
+    private val allPois = mutableStateListOf<PointOfInterest>()
+    private val webPoiUrl = "http://192.168.1.43:3000/poi/all"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,7 +72,8 @@ class MainActivity : ComponentActivity(), LocationListener {
         Configuration.getInstance().userAgentValue = packageName
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         databaseHelper = PoiDatabaseHelper(this)
-        poiList.addAll(databaseHelper.getAllPois())
+        allPois.addAll(databaseHelper.getAllPois())
+        poiList.addAll(allPois)
         checkLocationPermission()
 
         setContent {
@@ -96,6 +108,7 @@ class MainActivity : ComponentActivity(), LocationListener {
                                     longitude = location.longitude
                                 )
                                 poiList.add(newPoi)
+                                allPois.add(newPoi)
 
                                 databaseHelper.addPoi(
                                     name,
@@ -116,7 +129,9 @@ class MainActivity : ComponentActivity(), LocationListener {
                 composable("searchPoi") {
                     SearchPoiScreen(
                         onSearch = { type ->
-                            val results = databaseHelper.searchPoisByType(type)
+                            val results = allPois.filter {
+                                it.type.contains(type, ignoreCase = true)
+                            }
 
                             if (results.isEmpty()) {
                                 Toast.makeText(
@@ -139,7 +154,10 @@ class MainActivity : ComponentActivity(), LocationListener {
     @Composable
     fun MapScreen(
         onAddPoiClick: () -> Unit,
-        onSearchPoiClick: () -> Unit) {
+        onSearchPoiClick: () -> Unit
+    ) {
+        var showWebDialog by remember { mutableStateOf(false) }
+
         Box(modifier = Modifier.fillMaxSize()) {
 
             AndroidView(
@@ -191,7 +209,63 @@ class MainActivity : ComponentActivity(), LocationListener {
 
                 Button(onClick = onSearchPoiClick) {
                     Text("Search by Type")
-            }}}}
+                }
+
+                Button(onClick = {
+                    poiList.clear()
+                    poiList.addAll(allPois)
+                }) {
+                    Text("Clear Search")
+                }
+
+                Button(onClick = {
+                    val prefs = getSharedPreferences("poi_preferences", MODE_PRIVATE)
+                    val hasSeenDialog = prefs.getBoolean("hasSeenWebDialog", false)
+
+                    if (!hasSeenDialog) {
+                        showWebDialog = true
+                    } else {
+                        loadWebPois(saveToDatabase = false)
+                    }
+                }) {
+                    Text("Load Web POIs")
+                }}
+            if (showWebDialog) {
+                AlertDialog(
+                    onDismissRequest = {
+                        showWebDialog = false
+                    },
+                    title = {
+                        Text("Load web POIs")
+                    },
+                    text = {
+                        Text("Would you like to view the web POIs only, or download them into your local database?")
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showWebDialog = false
+
+                                val prefs = getSharedPreferences("poi_preferences", MODE_PRIVATE)
+                                prefs.edit().putBoolean("hasSeenWebDialog", true).apply()
+                                loadWebPois(saveToDatabase = true)
+                            }
+                        ) {
+                            Text("Download")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                showWebDialog = false
+                                loadWebPois(saveToDatabase = false)
+                            }
+                        ) {
+                            Text("View Only")
+                        }
+                    }
+                )
+            }}}
 
     @Composable
     fun AddPoiScreen(
@@ -283,6 +357,56 @@ class MainActivity : ComponentActivity(), LocationListener {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Back to Map")
+            }}}
+
+    private fun loadWebPois(saveToDatabase: Boolean) {
+        lifecycleScope.launch {
+            try {
+                val webPois = withContext(Dispatchers.IO) {
+                    val jsonText = URL(webPoiUrl).readText()
+                    val jsonArray = JSONArray(jsonText)
+                    val results = mutableListOf<PointOfInterest>()
+
+                    for (i in 0 until jsonArray.length()) {
+                        val item = jsonArray.getJSONObject(i)
+
+                        val poi = PointOfInterest(
+                            name = item.getString("name"),
+                            type = item.getString("type"),
+                            description = item.getString("description"),
+                            latitude = item.getDouble("lat"),
+                            longitude = item.getDouble("lon")
+                        )
+                        results.add(poi)
+
+                        if (saveToDatabase) {
+                            databaseHelper.addPoi(
+                                poi.name,
+                                poi.type,
+                                poi.description,
+                                poi.latitude,
+                                poi.longitude
+                            )
+                        }}
+                    results
+                }
+
+                allPois.addAll(webPois)
+                poiList.clear()
+                poiList.addAll(webPois)
+
+                Toast.makeText(
+                    applicationContext,
+                    "Loaded ${webPois.size} web POIs.",
+                    Toast.LENGTH_SHORT
+                ).show()
+
+            } catch (e: Exception) {
+                Toast.makeText(
+                    applicationContext,
+                    "Couldn't load web POIs.",
+                    Toast.LENGTH_SHORT
+                ).show()
             }}}
 
     private fun checkLocationPermission() {
