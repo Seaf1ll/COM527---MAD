@@ -27,6 +27,7 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
 
 class MainActivity : ComponentActivity(), LocationListener {
 
@@ -74,6 +75,9 @@ class MainActivity : ComponentActivity(), LocationListener {
                     MapScreen(
                         onAddPoiClick = {
                             navController.navigate("addPoi")
+                        },
+                        onSearchPoiClick = {
+                            navController.navigate("searchPoi")
                         }
                     )
                 }
@@ -107,10 +111,35 @@ class MainActivity : ComponentActivity(), LocationListener {
                             navController.popBackStack()
                         }
                     )
+                }
+
+                composable("searchPoi") {
+                    SearchPoiScreen(
+                        onSearch = { type ->
+                            val results = databaseHelper.searchPoisByType(type)
+
+                            if (results.isEmpty()) {
+                                Toast.makeText(
+                                    applicationContext,
+                                    "No results",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                poiList.clear()
+                                poiList.addAll(results)
+                                navController.popBackStack()
+                            }
+                        },
+                        onBackClick = {
+                            navController.popBackStack()
+                        }
+                    )
                 }}}}
 
     @Composable
-    fun MapScreen(onAddPoiClick: () -> Unit) {
+    fun MapScreen(
+        onAddPoiClick: () -> Unit,
+        onSearchPoiClick: () -> Unit) {
         Box(modifier = Modifier.fillMaxSize()) {
 
             AndroidView(
@@ -145,21 +174,24 @@ class MainActivity : ComponentActivity(), LocationListener {
                     for (poi in poiList) {
                         val marker = Marker(map)
                         marker.position = GeoPoint(poi.latitude, poi.longitude)
-                        marker.title = poi.name
-                        marker.snippet = "${poi.type}\n${poi.description}"
+                        marker.title = "${poi.name}\n\n${poi.type}\n\n${poi.description}"
                         map.overlays.add(marker)
                     }
                     map.invalidate()
                 }
             )
 
-            Button(
-                onClick = onAddPoiClick,
-                modifier = Modifier
-                    .padding(16.dp)
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("Add POI.")
-            }}}
+                Button(onClick = onAddPoiClick) {
+                    Text("Add POI")
+                }
+
+                Button(onClick = onSearchPoiClick) {
+                    Text("Search by Type")
+            }}}}
 
     @Composable
     fun AddPoiScreen(
@@ -215,7 +247,43 @@ class MainActivity : ComponentActivity(), LocationListener {
                 Text("Back to Map.")
             }
         }}
+    @Composable
+    fun SearchPoiScreen(
+        onSearch: (String) -> Unit,
+        onBackClick: () -> Unit
+    ){
+        var typeSearch by remember { mutableStateOf("")}
 
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Search Points of Interest by Type.")
+
+            OutlinedTextField(
+                value = typeSearch,
+                onValueChange = { typeSearch = it },
+                label = {Text("Type")},
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Button(
+                onClick = {
+                    onSearch(typeSearch)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Search")
+            }
+
+            Button(
+                onClick = onBackClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Back to Map")
+            }}}
 
     private fun checkLocationPermission() {
         val permissionGranted = ActivityCompat.checkSelfPermission(

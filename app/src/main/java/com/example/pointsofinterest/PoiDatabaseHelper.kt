@@ -68,9 +68,35 @@ class PoiDatabaseHelper(context: Context) :
                 poiList.add(poi)
             } while (cursor.moveToNext())
         }
+        cursor.close()
+        db.close()
 
-    cursor.close()
-    db.close()
+        return poiList
+    }
+    fun searchPoisByType(typeSearch: String): List<MainActivity.PointOfInterest> {
+        val poiList = mutableListOf<MainActivity.PointOfInterest>()
+        val db = readableDatabase
+        val cursor = db.rawQuery(
+            "SELECT name, type, description, latitude, longitude FROM points_of_interest WHERE type LIKE ?",
+            arrayOf("%$typeSearch%")
+        )
 
-    return poiList
-}}
+        if (cursor.moveToFirst()) {
+            do {
+                val poi = MainActivity.PointOfInterest(
+                    name = cursor.getString(0),
+                    type = cursor.getString(1),
+                    description = cursor.getString(2),
+                    latitude = cursor.getDouble(3),
+                    longitude = cursor.getDouble(4)
+                )
+
+                poiList.add(poi)
+            } while (cursor.moveToNext())
+        }
+
+        cursor.close()
+        db.close()
+
+        return poiList
+    }}
