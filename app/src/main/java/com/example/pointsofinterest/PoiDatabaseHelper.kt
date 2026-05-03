@@ -12,6 +12,7 @@ class PoiDatabaseHelper(context: Context) :
         val createTable = """
             CREATE TABLE points_of_interest (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                web_id INTEGER,
                 name TEXT,
                 type TEXT,
                 description TEXT,
@@ -28,6 +29,7 @@ class PoiDatabaseHelper(context: Context) :
     }
 
     fun addPoi(
+        webId: Int,
         name: String,
         type: String,
         description: String,
@@ -36,6 +38,7 @@ class PoiDatabaseHelper(context: Context) :
     ) {
         val db = writableDatabase
         val values = ContentValues()
+        values.put("web_id", webId)
         values.put("name", name)
         values.put("type", type)
         values.put("description", description)
@@ -51,7 +54,7 @@ class PoiDatabaseHelper(context: Context) :
         val db = readableDatabase
 
         val cursor = db.rawQuery(
-            "SELECT name, type, description, latitude, longitude FROM points_of_interest",
+            "SELECT web_id, name, type, description, latitude, longitude FROM points_of_interest",
             null
         )
 
@@ -77,18 +80,19 @@ class PoiDatabaseHelper(context: Context) :
         val poiList = mutableListOf<MainActivity.PointOfInterest>()
         val db = readableDatabase
         val cursor = db.rawQuery(
-            "SELECT name, type, description, latitude, longitude FROM points_of_interest WHERE type LIKE ?",
+            "SELECT web_id, name, type, description, latitude, longitude FROM points_of_interest WHERE type LIKE ?",
             arrayOf("%$typeSearch%")
         )
 
         if (cursor.moveToFirst()) {
             do {
                 val poi = MainActivity.PointOfInterest(
-                    name = cursor.getString(0),
-                    type = cursor.getString(1),
-                    description = cursor.getString(2),
-                    latitude = cursor.getDouble(3),
-                    longitude = cursor.getDouble(4)
+                    id = cursor.getInt(0),
+                    name = cursor.getString(1),
+                    type = cursor.getString(2),
+                    description = cursor.getString(3),
+                    latitude = cursor.getDouble(4),
+                    longitude = cursor.getDouble(5)
                 )
 
                 poiList.add(poi)

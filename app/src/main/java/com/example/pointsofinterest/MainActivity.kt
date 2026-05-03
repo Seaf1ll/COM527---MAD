@@ -36,6 +36,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.net.URL
+import java.net.HttpURLConnection
+import java.net.URLEncoder
 
 class MainActivity : ComponentActivity(), LocationListener {
 
@@ -55,6 +57,7 @@ class MainActivity : ComponentActivity(), LocationListener {
     private val prefsName = "poi_preferences"
 
     data class PointOfInterest(
+        val id: Int = 0,
         val name: String,
         val type: String,
         val description: String,
@@ -64,7 +67,8 @@ class MainActivity : ComponentActivity(), LocationListener {
 
     private val poiList = mutableStateListOf<PointOfInterest>()
     private val allPois = mutableStateListOf<PointOfInterest>()
-    private val webPoiUrl = "http://192.168.1.43:3000/poi/all"
+    private val webPoiUrl = "http://10.0.2.2:3000/poi/all"
+    private val createPoiUrl = "http://10.0.2.2:3000/poi/create"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,7 +104,16 @@ class MainActivity : ComponentActivity(), LocationListener {
                             val location = currentLocation
 
                             if (location != null) {
+                                uploadPoiToWeb(
+                                    name = name,
+                                    type = type,
+                                    description = description,
+                                    latitude = location.latitude,
+                                    longitude = location.longitude
+                                ) { webId ->
+
                                 val newPoi = PointOfInterest(
+                                    id = webId,
                                     name = name,
                                     type = type,
                                     description = description,
@@ -111,15 +124,16 @@ class MainActivity : ComponentActivity(), LocationListener {
                                 allPois.add(newPoi)
 
                                 databaseHelper.addPoi(
+                                    webId,
                                     name,
                                     type,
                                     description,
                                     location.latitude,
                                     location.longitude
                                 )
-                            }
+
                             navController.popBackStack()
-                        },
+                        }}},
                         onBackClick = {
                             navController.popBackStack()
                         }
@@ -371,6 +385,7 @@ class MainActivity : ComponentActivity(), LocationListener {
                         val item = jsonArray.getJSONObject(i)
 
                         val poi = PointOfInterest(
+                            id = item.getInt("id"),
                             name = item.getString("name"),
                             type = item.getString("type"),
                             description = item.getString("description"),
@@ -381,6 +396,7 @@ class MainActivity : ComponentActivity(), LocationListener {
 
                         if (saveToDatabase) {
                             databaseHelper.addPoi(
+                                poi.id,
                                 poi.name,
                                 poi.type,
                                 poi.description,
@@ -391,9 +407,11 @@ class MainActivity : ComponentActivity(), LocationListener {
                     results
                 }
 
+                allPois.clear()
+                allPois.addAll(databaseHelper.getAllPois())
                 allPois.addAll(webPois)
                 poiList.clear()
-                poiList.addAll(webPois)
+                poiList.addAll(allPois)
 
                 Toast.makeText(
                     applicationContext,
@@ -444,6 +462,52 @@ class MainActivity : ComponentActivity(), LocationListener {
             updateMapLocation(lastLocation)
         }
     }
+
+    private fun uploadPoiToWeb(
+        name: String,
+        type: String,
+        description: String,
+        latitude: Double,
+        longitude: Double,
+        onSuccess: (Int) -> Unit
+    ) {
+        lifecycleScope.launch {
+            try {
+                val webId = withContext(Dispatchers.IO) {
+                    val postData =
+                        "name=${URLEncoder.encode(name, "UTF-8")}" +
+                                "&type=${URLEncoder.encode(type, "UTF-8")}" +
+                                "&description=${URLEncoder.encode(description, "UTF-8")}" +
+                                "&lat=$latitude" +
+                                "&lon=$longitude"
+
+                    val connection = URL(createPoiUrl).openConnection() as HttpURLConnection
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.setRequestProperty(
+                        "Content-Type",
+                        "application/x-www-form-urlencoded"
+                    )
+
+                    connection.outputStream.use { output ->
+                        output.write(postData.toByteArray())
+                    }
+
+                    val response = connection.inputStream.bufferedReader().readText()
+                    connection.disconnect()
+                    response.toInt()
+                }
+                onSuccess(webId)
+
+            } catch (e: Exception) {
+                Toast.makeText(
+                    applicationContext,
+                    "Couldn't upload POI to server.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }}}
+
+
 
     override fun onLocationChanged(location: Location) {
         updateMapLocation(location)
