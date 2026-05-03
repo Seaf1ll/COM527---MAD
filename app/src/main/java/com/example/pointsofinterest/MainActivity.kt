@@ -1,7 +1,6 @@
 package com.example.Q102009411
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
@@ -9,9 +8,6 @@ import android.location.LocationManager
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -28,8 +24,6 @@ import org.osmdroid.views.overlay.Marker
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,6 +32,13 @@ import org.json.JSONArray
 import java.net.URL
 import java.net.HttpURLConnection
 import java.net.URLEncoder
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Close
 
 class MainActivity : ComponentActivity(), LocationListener {
 
@@ -54,7 +55,6 @@ class MainActivity : ComponentActivity(), LocationListener {
                 startLocationUpdates()
             }
         }
-    private val prefsName = "poi_preferences"
 
     data class PointOfInterest(
         val id: Int = 0,
@@ -70,11 +70,13 @@ class MainActivity : ComponentActivity(), LocationListener {
     private val webPoiUrl = "http://10.0.2.2:3000/poi/all"
     private val createPoiUrl = "http://10.0.2.2:3000/poi/create"
 
+    @OptIn(ExperimentalMaterial3Api::class)
+    //Needed to use the TopAppBar import for some reason
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         Configuration.getInstance().userAgentValue = packageName
-        locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
         databaseHelper = PoiDatabaseHelper(this)
         allPois.addAll(databaseHelper.getAllPois())
         poiList.addAll(allPois)
@@ -82,21 +84,118 @@ class MainActivity : ComponentActivity(), LocationListener {
 
         setContent {
             val navController = rememberNavController()
+            val drawerState = rememberDrawerState(DrawerValue.Closed)
+            val scope = rememberCoroutineScope()
 
-            NavHost(
-                navController = navController,
-                startDestination = "map"
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                gesturesEnabled = false,
+                //gestures interfere with pinching the map, hamburger only works better.
+                drawerContent = {
+                    ModalDrawerSheet {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("Points of Interest")
+                            IconButton(
+                                onClick = {
+                                    scope.launch {drawerState.close()}
+                                }
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Close")
+                            }}
+
+                        NavigationDrawerItem(
+                            label = {Text("Map")},
+                            selected = false,
+                            onClick = {
+                                scope.launch {drawerState.close()}
+                                navController.navigate("map")
+                            }
+                        )
+
+                        NavigationDrawerItem(
+                            label = {Text("Search")},
+                            selected = false,
+                            onClick = {
+                                scope.launch {drawerState.close()}
+                                navController.navigate("searchPoi")
+                            }
+                        )
+
+                        NavigationDrawerItem(
+                            label = {Text("Download Web POIs")},
+                            selected = false,
+                            onClick = {
+                                scope.launch {drawerState.close()}
+                                loadWebPois()
+                            }
+                        )
+                    }}
             ) {
-                composable("map") {
-                    MapScreen(
-                        onAddPoiClick = {
-                            navController.navigate("addPoi")
-                        },
-                        onSearchPoiClick = {
-                            navController.navigate("searchPoi")
+                Scaffold(
+                    topBar = {
+                        TopAppBar(
+                            title = {Text("Points of Interest")},
+                            navigationIcon = {
+                                IconButton(
+                                    onClick = {
+                                        scope.launch {drawerState.open()}
+                                    }
+                                ) {
+                                    Icon(Icons.Default.Menu, contentDescription = "Menu")
+                                }}
+                        )
+                    },
+                    bottomBar = {
+                        NavigationBar {
+                            NavigationBarItem(
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("map")
+                                },
+                                icon = {
+                                    Icon(Icons.Default.Place, contentDescription = "Map")
+                                },
+                                label = {
+                                    Text("Map")
+                                }
+                            )
+
+                            NavigationBarItem(
+                                selected = false,
+                                onClick = {
+                                    navController.navigate("searchPoi")
+                                },
+                                icon = {
+                                    Icon(Icons.Default.Search, contentDescription = "Search")
+                                },
+                                label = {
+                                    Text("Search")
+                                }
+                            )
                         }
-                    )
-                }
+                    },
+                    floatingActionButton = {
+                        FloatingActionButton(
+                            onClick = {
+                                navController.navigate("addPoi")
+                            }
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = "Add POI")
+                        }}
+                ) { paddingValues ->
+                    Box(modifier = Modifier.padding(paddingValues)) {
+                        NavHost(
+                            navController = navController,
+                            startDestination = "map"
+                        ) {
+                            composable("map") {
+                                MapScreen()
+                            }
 
                 composable("addPoi") {
                     AddPoiScreen(
@@ -156,22 +255,18 @@ class MainActivity : ComponentActivity(), LocationListener {
                             } else {
                                 poiList.clear()
                                 poiList.addAll(results)
-                                navController.popBackStack()
+                                navController.navigate("map")
                             }
                         },
                         onBackClick = {
-                            navController.popBackStack()
+                            navController.navigate("map")
                         }
                     )
-                }}}}
+                }}}}}}}
 
     @Composable
     fun MapScreen(
-        onAddPoiClick: () -> Unit,
-        onSearchPoiClick: () -> Unit
     ) {
-        var showWebDialog by remember { mutableStateOf(false) }
-
         Box(modifier = Modifier.fillMaxSize()) {
 
             AndroidView(
@@ -217,78 +312,22 @@ class MainActivity : ComponentActivity(), LocationListener {
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(onClick = onAddPoiClick) {
-                    Text("Add POI")
-                }
-
-                Button(onClick = onSearchPoiClick) {
-                    Text("Search by Type")
-                }
 
                 Button(onClick = {
                     poiList.clear()
                     poiList.addAll(allPois)
                 }) {
                     Text("Clear Search")
-                }
-
-                Button(onClick = {
-                    val prefs = getSharedPreferences("poi_preferences", MODE_PRIVATE)
-                    val hasSeenDialog = prefs.getBoolean("hasSeenWebDialog", false)
-
-                    if (!hasSeenDialog) {
-                        showWebDialog = true
-                    } else {
-                        loadWebPois(saveToDatabase = false)
-                    }
-                }) {
-                    Text("Load Web POIs")
-                }}
-            if (showWebDialog) {
-                AlertDialog(
-                    onDismissRequest = {
-                        showWebDialog = false
-                    },
-                    title = {
-                        Text("Load web POIs")
-                    },
-                    text = {
-                        Text("Would you like to view the web POIs only, or download them into your local database?")
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                showWebDialog = false
-
-                                val prefs = getSharedPreferences("poi_preferences", MODE_PRIVATE)
-                                prefs.edit().putBoolean("hasSeenWebDialog", true).apply()
-                                loadWebPois(saveToDatabase = true)
-                            }
-                        ) {
-                            Text("Download")
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(
-                            onClick = {
-                                showWebDialog = false
-                                loadWebPois(saveToDatabase = false)
-                            }
-                        ) {
-                            Text("View Only")
-                        }
-                    }
-                )
-            }}}
+                }}}}
 
     @Composable
     fun AddPoiScreen(
         onSavePoi: (String, String, String) -> Unit,
         onBackClick: () -> Unit
     ) {
-        var name by remember { mutableStateOf("") }
+        var name by remember {mutableStateOf("")}
         var type by remember { mutableStateOf("") }
-        var description by remember { mutableStateOf("") }
+        var description by remember {mutableStateOf("")}
 
         Column(
             modifier = Modifier
@@ -300,22 +339,22 @@ class MainActivity : ComponentActivity(), LocationListener {
 
             OutlinedTextField(
                 value = name,
-                onValueChange = { name = it },
-                label = { Text("Name") },
+                onValueChange = {name = it},
+                label = {Text("Name")},
                 modifier = Modifier.fillMaxWidth()
             )
 
             OutlinedTextField(
                 value = type,
-                onValueChange = { type = it },
-                label = { Text("Type") },
+                onValueChange = {type = it},
+                label = {Text("Type")},
                 modifier = Modifier.fillMaxWidth()
             )
 
             OutlinedTextField(
                 value = description,
-                onValueChange = { description = it },
-                label = { Text("Description") },
+                onValueChange = {description = it},
+                label = {Text("Description")},
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -352,7 +391,7 @@ class MainActivity : ComponentActivity(), LocationListener {
 
             OutlinedTextField(
                 value = typeSearch,
-                onValueChange = { typeSearch = it },
+                onValueChange = {typeSearch = it},
                 label = {Text("Type")},
                 modifier = Modifier.fillMaxWidth()
             )
@@ -373,11 +412,15 @@ class MainActivity : ComponentActivity(), LocationListener {
                 Text("Back to Map")
             }}}
 
-    private fun loadWebPois(saveToDatabase: Boolean) {
+    private fun loadWebPois(){
         lifecycleScope.launch {
             try {
                 val webPois = withContext(Dispatchers.IO) {
-                    val jsonText = URL(webPoiUrl).readText()
+                    val connection = URL(webPoiUrl).openConnection() as HttpURLConnection
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+                    val jsonText = connection.inputStream.bufferedReader().readText()
+                    connection.disconnect()
                     val jsonArray = JSONArray(jsonText)
                     val results = mutableListOf<PointOfInterest>()
 
@@ -394,7 +437,6 @@ class MainActivity : ComponentActivity(), LocationListener {
                         )
                         results.add(poi)
 
-                        if (saveToDatabase) {
                             databaseHelper.addPoi(
                                 poi.id,
                                 poi.name,
@@ -403,7 +445,7 @@ class MainActivity : ComponentActivity(), LocationListener {
                                 poi.latitude,
                                 poi.longitude
                             )
-                        }}
+                        }
                     results
                 }
 
@@ -419,7 +461,7 @@ class MainActivity : ComponentActivity(), LocationListener {
                     Toast.LENGTH_SHORT
                 ).show()
 
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 Toast.makeText(
                     applicationContext,
                     "Couldn't load web POIs.",
@@ -484,6 +526,8 @@ class MainActivity : ComponentActivity(), LocationListener {
                     val connection = URL(createPoiUrl).openConnection() as HttpURLConnection
                     connection.requestMethod = "POST"
                     connection.doOutput = true
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
                     connection.setRequestProperty(
                         "Content-Type",
                         "application/x-www-form-urlencoded"
@@ -499,10 +543,10 @@ class MainActivity : ComponentActivity(), LocationListener {
                 }
                 onSuccess(webId)
 
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 Toast.makeText(
                     applicationContext,
-                    "Couldn't upload POI to server.",
+                    "Upload failed. Check server connection.",
                     Toast.LENGTH_SHORT
                 ).show()
             }}}
