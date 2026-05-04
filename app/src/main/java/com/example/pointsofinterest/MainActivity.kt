@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.material.icons.filled.Close
+import androidx.core.graphics.drawable.DrawableCompat
 
 class MainActivity : ComponentActivity(), LocationListener {
 
@@ -69,6 +70,7 @@ class MainActivity : ComponentActivity(), LocationListener {
     private val allPois = mutableStateListOf<PointOfInterest>()
     private val webPoiUrl = "http://10.0.2.2:3000/poi/all"
     private val createPoiUrl = "http://10.0.2.2:3000/poi/create"
+    private val poiReviews = mutableStateMapOf<Int, String>()
 
     @OptIn(ExperimentalMaterial3Api::class)
     //Needed to use the TopAppBar import for some reason
@@ -265,8 +267,9 @@ class MainActivity : ComponentActivity(), LocationListener {
                 }}}}}}}
 
     @Composable
-    fun MapScreen(
-    ) {
+    fun MapScreen()
+    {var selectedPoi by remember {mutableStateOf<PointOfInterest?>(null)}
+     var reviewText by remember {mutableStateOf("")}
         Box(modifier = Modifier.fillMaxSize()) {
 
             AndroidView(
@@ -293,6 +296,9 @@ class MainActivity : ComponentActivity(), LocationListener {
                         userMarker = Marker(map)
                         userMarker!!.position = userPoint
                         userMarker!!.title = "You are here"
+                        userMarker!!.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        userMarker!!.icon = map.context.getDrawable(android.R.drawable.ic_menu_mylocation)
+                        DrawableCompat.setTint(userMarker!!.icon!!, android.graphics.Color.BLUE)
 
                         map.overlays.add(userMarker)
                         map.controller.setCenter(userPoint)
@@ -301,7 +307,13 @@ class MainActivity : ComponentActivity(), LocationListener {
                     for (poi in poiList) {
                         val marker = Marker(map)
                         marker.position = GeoPoint(poi.latitude, poi.longitude)
-                        marker.title = "${poi.name}\n\n${poi.type}\n\n${poi.description}"
+                        marker.title = poi.name
+
+                        marker.setOnMarkerClickListener { _, _ ->
+                            selectedPoi = poi
+                            reviewText = poiReviews[poi.id] ?:""
+                            true
+                        }
                         map.overlays.add(marker)
                     }
                     map.invalidate()
@@ -318,7 +330,55 @@ class MainActivity : ComponentActivity(), LocationListener {
                     poiList.addAll(allPois)
                 }) {
                     Text("Clear Search")
-                }}}}
+                }}
+
+            if (selectedPoi != null){
+                AlertDialog(
+                    onDismissRequest = {
+                        selectedPoi = null
+                    },
+                    title = {
+                        Text(selectedPoi!!.name)
+                    },
+                    text = {
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Type: ${selectedPoi!!.type}")
+                            Text("Description: ${selectedPoi!!.description}")
+
+                            OutlinedTextField(
+                                value = reviewText,
+                                onValueChange = {reviewText = it},
+                                label = {Text("Review")},
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }},
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                poiReviews[selectedPoi!!.id] = reviewText
+
+                                Toast.makeText(
+                                    applicationContext,
+                                    "Review Saved",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                selectedPoi = null
+                            }
+                        ) {
+                            Text("Save Review")
+                        }},
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                selectedPoi = null
+                            }
+                        ) {
+                            Text("Close")
+                        }}
+                )
+            }}}
 
     @Composable
     fun AddPoiScreen(
